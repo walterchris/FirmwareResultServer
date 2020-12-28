@@ -2,18 +2,25 @@ package main
 
 import (
 	"net/http"
+	"os"
 
-	"github.com/prometheus/common/log"
+	log "github.com/sirupsen/logrus"
 	"github.com/walterchris/FirmwareResultServer/pkg/entry"
+	"github.com/walterchris/FirmwareResultServer/pkg/event"
 	"github.com/walterchris/FirmwareResultServer/pkg/guard"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
+
+	// Only log the warning severity or above.
+	log.SetLevel(log.DebugLevel)
+
 	router := gin.Default()
 
-	jobPipeline := make(chan entry.Job)
+	jobPipeline := make(chan event.Event)
 
 	go guard.Run(jobPipeline)
 	entry.Init(jobPipeline)
@@ -42,7 +49,7 @@ func main() {
 		}
 
 		// Add a new Entry
-		if err := json.Add(); err != nil {
+		if err := entry.Add(&json); err != nil {
 			log.Errorf("Error while adding entry: %v", err)
 		}
 	})
@@ -54,7 +61,7 @@ func main() {
 			return
 		}
 
-		if err := json.Update(); err != nil {
+		if err := entry.Update(&json); err != nil {
 			log.Errorf("Error while update entry: %v", err)
 		}
 	})

@@ -9,7 +9,7 @@ import (
 
 // Init Database
 func Init() (*sql.DB, error) {
-	db, err := sql.Open("mysql", "poster:poster@tcp(127.0.0.1:6603)/testing")
+	db, err := sql.Open("mysql", "poster:poster@tcp(127.0.0.1:6603)/testing?parseTime=true")
 	if err != nil {
 		return nil, err
 	}
