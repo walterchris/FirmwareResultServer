@@ -5,6 +5,7 @@ import (
 	"os"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/walterchris/FirmwareResultServer/pkg/bruce"
 	"github.com/walterchris/FirmwareResultServer/pkg/entry"
 	"github.com/walterchris/FirmwareResultServer/pkg/event"
 	"github.com/walterchris/FirmwareResultServer/pkg/guard"
@@ -21,8 +22,10 @@ func main() {
 	router := gin.Default()
 
 	jobPipeline := make(chan event.Event)
+	postPipeline := make(chan event.Event)
 
-	go guard.Run(jobPipeline)
+	go guard.Run(jobPipeline, postPipeline)
+	go bruce.Run(postPipeline)
 	entry.Init(jobPipeline)
 
 	// Query string parameters are parsed using the existing underlying request object.

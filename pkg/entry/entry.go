@@ -25,6 +25,12 @@ type Result struct {
 	ReportLink string `json:"reportLink"`
 }
 
+const (
+	SUCCESS_ONGOING = 0
+	SUCCESS_OK      = 1
+	SUCCESS_FAILURE = 2
+)
+
 var connection *sql.DB
 var pipeline chan event.Event
 
@@ -51,10 +57,17 @@ func Add(e *Job) error {
 		}
 	}
 
+	var doubleJob Job
+	// Check if entry already exists in DB
+	err := connection.QueryRow("SELECT workerID, projectID, commitHash FROM entries WHERE workerID = ? AND projectID = ? AND commitHash = ?", e.WorkerID, e.ProjectID, e.Hash).Scan(&doubleJob.WorkerID, &doubleJob.ProjectID, &doubleJob.Hash)
+	if err == nil && e.WorkerID == doubleJob.WorkerID {
+		return fmt.Errorf("Entry with Hash %s already exists in DB (Worker: %s, Project: %s)", e.Hash, e.WorkerID, e.ProjectID)
+	}
+
 	timeoutTime := time.Now().Local().Add(time.Minute * time.Duration(e.Timeout))
 
 	// Add Entry into the entries list
-	_, err := connection.Exec("INSERT INTO entries(workerID, projectID, commitHash, started, timeout) VALUES(?, ?, ?, ?, ?)", e.WorkerID, e.ProjectID, e.Hash, time.Now().Format(createdFormat), timeoutTime.Format(createdFormat))
+	_, err = connection.Exec("INSERT INTO entries(workerID, projectID, commitHash, started, timeout, reportLink) VALUES(?, ?, ?, ?, ?, ?)", e.WorkerID, e.ProjectID, e.Hash, time.Now().Format(createdFormat), timeoutTime.Format(createdFormat), "")
 	if err != nil {
 		return fmt.Errorf("Failed to insert entry into DB with %w", err)
 	}
@@ -158,4 +171,63 @@ func GetAllOpenEvents() ([]event.Event, error) {
 	}
 
 	return events, nil
+}
+
+// InsertGerritIntoDB - Insert the Gerrit Post into the DB
+func InsertGerritIntoDB(e *event.Event) error {
+
+	if connection == nil {
+		if err := Init(pipeline); err != nil {
+			return err
+		}
+	}
+
+	// Insert into DB
+	_, err := connection.Query("INSERT INTO gerritEntries (ProjectID, Hash) VALUES (?, ?)", e.ProjectID, e.Hash)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// GetAllEventsWithHash - Return all events with the corresponding hash
+func GetAllEventsWithHash(e *event.Event) ([]event.Event, error) {
+
+	var resultEvents []event.Event
+
+	if connection == nil {
+		if err := Init(pipeline); err != nil {
+			return nil, err
+		}
+	}
+
+	// Grab all open events form the DB
+	results, err := connection.Query("SELECT projectID, commitHash, status, reportLink FROM entries WHERE projectID = ? AND commitHash = ?", e.ProjectID, e.Hash)
+	if err != nil {
+		return nil, err
+	}
+
+	for results.Next() {
+		var job event.Event
+		// for each row, scan the result into our tag composite object
+		err = results.Scan(&job.ProjectID, &job.Hash, &job.Success, &job.ReportLink)
+		if err != nil {
+			return nil, err
+		}
+
+		resultEvents = append(resultEvents, job)
+
+		log.Debugf("Result Events: %v", resultEvents)
+	}
+
+	// Check if all results are finished
+	for _, result := range resultEvents {
+		if result.Success == SUCCESS_ONGOING {
+			log.Debugf("Not all results are ready yet.")
+			return nil, nil
+		}
+	}
+
+	return resultEvents, nil
 }

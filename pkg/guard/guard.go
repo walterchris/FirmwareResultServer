@@ -32,7 +32,7 @@ func getTimedOutEvents(e []event.Event) []event.Event {
 }
 
 // Run - Start the Guardian Runner
-func Run(pipeline chan event.Event) error {
+func Run(pipeline chan event.Event, postPipeline chan event.Event) error {
 
 	log.Infof("Setting up Guardian..")
 
@@ -51,7 +51,7 @@ func Run(pipeline chan event.Event) error {
 			switch job.Task {
 			case event.CMD_WATCH:
 				jobs = append(jobs, job)
-				log.Infof("Received new Job %s from %s we need to track.", job.Hash, job.WorkerID)
+				log.Infof("Received new Job %s from Worker #%s we need to track.", job.Hash, job.WorkerID)
 				break
 			case event.CMD_JOB_END:
 				log.Infof("Job %s has ended", job.Hash)
@@ -59,6 +59,7 @@ func Run(pipeline chan event.Event) error {
 					if v.ProjectID == job.ProjectID &&
 						v.WorkerID == job.WorkerID &&
 						v.Hash == job.Hash {
+						postPipeline <- job
 						// Send event to Bruce
 						jobs = remove(jobs, i)
 					}
@@ -79,11 +80,13 @@ func Run(pipeline chan event.Event) error {
 								WorkerID:   w.WorkerID,
 								ProjectID:  w.ProjectID,
 								Hash:       w.Hash,
-								Success:    2,
+								Success:    entry.SUCCESS_FAILURE,
 								ReportLink: "",
 							}
 							entry.UpdateWithoutPipeline(&e)
 							// Send event to Bruce
+							v.Success = entry.SUCCESS_FAILURE
+							postPipeline <- v
 							jobs = remove(jobs, i)
 							break
 						}
