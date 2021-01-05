@@ -11,18 +11,20 @@ import (
 )
 
 type Job struct {
-	WorkerID  string `json:"workerID"`
-	ProjectID string `json:"projectID"`
-	Hash      string `json:"hash"`
-	Timeout   int    `json:"timeout"`
+	WorkerID    string `json:"workerID"`
+	ProjectID   string `json:"projectID"`
+	Hash        string `json:"hash"`
+	Timeout     int    `json:"timeout"`
+	Description string `json:"description"`
 }
 
 type Result struct {
-	WorkerID   string `json:"workerID"`
-	ProjectID  string `json:"projectID"`
-	Hash       string `json:"hash"`
-	Success    int    `json:"success"`
-	ReportLink string `json:"reportLink"`
+	WorkerID    string `json:"workerID"`
+	ProjectID   string `json:"projectID"`
+	Hash        string `json:"hash"`
+	Success     int    `json:"success"`
+	ReportLink  string `json:"reportLink"`
+	Description string `json:"description"`
 }
 
 const (
@@ -67,7 +69,7 @@ func Add(e *Job) error {
 	timeoutTime := time.Now().Local().Add(time.Minute * time.Duration(e.Timeout))
 
 	// Add Entry into the entries list
-	_, err = connection.Exec("INSERT INTO entries(workerID, projectID, commitHash, started, timeout, reportLink) VALUES(?, ?, ?, ?, ?, ?)", e.WorkerID, e.ProjectID, e.Hash, time.Now().Format(createdFormat), timeoutTime.Format(createdFormat), "")
+	_, err = connection.Exec("INSERT INTO entries(workerID, projectID, commitHash, started, timeout, reportLink, description) VALUES(?, ?, ?, ?, ?, ?, ?)", e.WorkerID, e.ProjectID, e.Hash, time.Now().Format(createdFormat), timeoutTime.Format(createdFormat), "", e.Description)
 	if err != nil {
 		return fmt.Errorf("Failed to insert entry into DB with %w", err)
 	}
@@ -80,6 +82,7 @@ func Add(e *Job) error {
 		Hash:        e.Hash,
 		Timeout:     e.Timeout,
 		TimeoutTime: timeoutTime,
+		Description: e.Description,
 	}
 	pipeline <- pipelineEntry
 
@@ -95,12 +98,13 @@ func Update(e *Result) error {
 	}
 	// Fire into Channel
 	pipelineEntry := event.Event{
-		Task:       event.CMD_JOB_END,
-		WorkerID:   e.WorkerID,
-		ProjectID:  e.ProjectID,
-		Hash:       e.Hash,
-		Success:    e.Success,
-		ReportLink: e.ReportLink,
+		Task:        event.CMD_JOB_END,
+		WorkerID:    e.WorkerID,
+		ProjectID:   e.ProjectID,
+		Hash:        e.Hash,
+		Success:     e.Success,
+		ReportLink:  e.ReportLink,
+		Description: e.Description,
 	}
 	pipeline <- pipelineEntry
 
@@ -115,9 +119,16 @@ func UpdateWithoutPipeline(e *Result) error {
 		}
 	}
 
+	var doubleJob Result
+	// Check if entry already exists in DB
+	err := connection.QueryRow("SELECT workerID, projectID, commitHash FROM entries WHERE workerID = ? AND projectID = ? AND commitHash = ? AND status = 0", e.WorkerID, e.ProjectID, e.Hash).Scan(&doubleJob.WorkerID, &doubleJob.ProjectID, &doubleJob.Hash)
+	if err != nil {
+		return fmt.Errorf("Entry with Hash %s does not exists in DB (Worker: %s, Project: %s)", e.Hash, e.WorkerID, e.ProjectID)
+	}
+
 	log.Infof("Updating entry in database with %v", e)
 
-	_, err := connection.Exec("UPDATE entries SET finished = ?, status = ?, reportLink = ? WHERE projectID = ? AND workerID = ? AND commitHash = ? AND status = 0 LIMIT 1", time.Now().Format(createdFormat), e.Success, e.ReportLink, e.ProjectID, e.WorkerID, e.Hash)
+	_, err = connection.Exec("UPDATE entries SET finished = ?, status = ?, reportLink = ? WHERE projectID = ? AND workerID = ? AND commitHash = ? AND status = 0 LIMIT 1", time.Now().Format(createdFormat), e.Success, e.ReportLink, e.ProjectID, e.WorkerID, e.Hash)
 	if err != nil {
 		return fmt.Errorf("Failed to update entry into DB with %w", err)
 	}
@@ -203,7 +214,7 @@ func GetAllEventsWithHash(e *event.Event) ([]event.Event, error) {
 	}
 
 	// Grab all open events form the DB
-	results, err := connection.Query("SELECT projectID, commitHash, status, reportLink FROM entries WHERE projectID = ? AND commitHash = ?", e.ProjectID, e.Hash)
+	results, err := connection.Query("SELECT projectID, commitHash, status, reportLink, description FROM entries WHERE projectID = ? AND commitHash = ?", e.ProjectID, e.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +222,7 @@ func GetAllEventsWithHash(e *event.Event) ([]event.Event, error) {
 	for results.Next() {
 		var job event.Event
 		// for each row, scan the result into our tag composite object
-		err = results.Scan(&job.ProjectID, &job.Hash, &job.Success, &job.ReportLink)
+		err = results.Scan(&job.ProjectID, &job.Hash, &job.Success, &job.ReportLink, &job.Description)
 		if err != nil {
 			return nil, err
 		}

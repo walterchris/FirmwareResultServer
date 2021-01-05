@@ -17,5 +17,6 @@ type Event struct {
 	Timeout     int    `json:"timeout"`
 	Success     int    `json:"success"`
 	ReportLink  string `json:"reportLink"`
+	Description string `json:"description"`
 	TimeoutTime time.Time
 }

@@ -77,11 +77,12 @@ func Run(pipeline chan event.Event, postPipeline chan event.Event) error {
 							v.Hash == w.Hash {
 							// Update Entry
 							e := entry.Result{
-								WorkerID:   w.WorkerID,
-								ProjectID:  w.ProjectID,
-								Hash:       w.Hash,
-								Success:    entry.SUCCESS_FAILURE,
-								ReportLink: "",
+								WorkerID:    w.WorkerID,
+								ProjectID:   w.ProjectID,
+								Hash:        w.Hash,
+								Success:     entry.SUCCESS_FAILURE,
+								ReportLink:  "",
+								Description: v.Description,
 							}
 							entry.UpdateWithoutPipeline(&e)
 							// Send event to Bruce

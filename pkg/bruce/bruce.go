@@ -6,6 +6,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/walterchris/FirmwareResultServer/pkg/entry"
 	"github.com/walterchris/FirmwareResultServer/pkg/event"
+	"github.com/walterchris/FirmwareResultServer/pkg/gerrit"
 )
 
 // Run this Bruce
@@ -32,6 +33,14 @@ func Run(p chan event.Event) error {
 				err = entry.InsertGerritIntoDB(&event)
 				if err != nil {
 					log.Errorf("Error inserting Gerrit Entry into DB: %v", err)
+				}
+				g, err := gerrit.CreateGerrit("https://review.coreboot.org/", "hardwaretestrobot", "5heA0O1EZ6aMecPDIiG5Nj7pC6fK+ias3IOtmioplg")
+				if err != nil {
+					log.Errorf("Error creating gerrit: %v", err)
+				}
+				err = g.ReportStatus(events, event.Hash, 0, "")
+				if err != nil {
+					log.Errorf("Error generating reports: %v", err)
 				}
 			}
 		}
